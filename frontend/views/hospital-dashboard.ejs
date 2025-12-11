@@ -1,0 +1,222 @@
+<%- include('partials/header', { title: 'Hospital Dashboard', user, active: 'dashboard' }) %>
+
+<div class="row g-4">
+  <!-- LEFT COLUMN: INFO + VERIFY -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-2">Hospital Dashboard</h5>
+        <p class="text-muted mb-3">
+          View medicines received by your hospital and verify their authenticity before dispensing to patients.
+        </p>
+
+
+        <p class="small text-muted mt-2">
+          Use verification for any medicine before it is dispensed to a patient.
+        </p>
+
+        <!-- INLINE VERIFY SECTION (no redirect) -->
+        <div id="verify-section" class="mt-3">
+          <form id="verify-form" class="d-flex gap-2">
+            <input
+              type="text"
+              class="form-control"
+              placeholder="Enter Drug ID"
+              id="verifyDrugId"
+              required
+            />
+            <button type="submit" class="btn btn-outline-primary">
+              Verify
+            </button>
+          </form>
+
+          <div id="verify-result" class="mt-3 d-none">
+            <div class="alert" id="verify-alert"></div>
+
+            <div id="verify-details" class="small d-none">
+              <p><strong>Drug ID:</strong> <span id="v-id"></span></p>
+              <p><strong>Name:</strong> <span id="v-name"></span></p>
+              <p><strong>Manufacturer:</strong> <span id="v-manufacturer"></span></p>
+              <p><strong>Status:</strong> <span id="v-status"></span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN: INVENTORY TABLE -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Inventory – Received Medicines</h5>
+
+        <% if (!drugs || drugs.length === 0) { %>
+          <div class="alert alert-info mb-0">
+            No medicines received yet.
+          </div>
+        <% } else { %>
+
+          <div class="table-responsive">
+            <table class="table align-middle table-hover">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Drug ID</th>
+                  <th>Name</th>
+                  <th>Manufacturer</th>
+                  <th>Status</th>
+                  <th>Last Updated</th>
+                  <th>Dispense to Patient</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% drugs.forEach((drug, idx) => { %>
+                  <tr>
+                    <td><%= idx + 1 %></td>
+
+                    <!-- link to API detail if you want to inspect JSON -->
+                    <td>
+                      <a href="/api/drugs/<%= drug.id %>" target="_blank">
+                        <%= drug.id %>
+                      </a>
+                    </td>
+
+                    <td><%= drug.name %></td>
+                    <td><%= drug.manufacturer || 'N/A' %></td>
+                    <td>
+                      <span class="badge bg-success">
+                        <%= drug.status || 'Transferred to Hospital' %>
+                      </span>
+                    </td>
+                    <td>
+                      <%= drug.updatedAt ? drug.updatedAt.toLocaleString() : 'N/A' %>
+                    </td>
+
+                    <td>
+                      <% if (patients && patients.length > 0) { %>
+                        <form
+                          class="d-flex gap-2 transfer-to-patient-form"
+                          data-drugid="<%= drug.id %>"
+                        >
+                          <input type="hidden" name="drugId" value="<%= drug.id %>" />
+
+                          <select
+                            name="patientName"
+                            class="form-select form-select-sm"
+                            required
+                          >
+                            <% patients.forEach(p => { %>
+                              <option value="<%= p.username || p.name %>">
+                                <%= p.username || p.name %>
+                              </option>
+                            <% }) %>
+                          </select>
+
+                          <button type="submit" class="btn btn-sm btn-primary">
+                            Dispense
+                          </button>
+                        </form>
+                      <% } else { %>
+                        <small class="text-muted">No patients registered</small>
+                      <% } %>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.transfer-to-patient-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const submitBtn = form.querySelector("button[type='submit']");
+      const origText = submitBtn ? submitBtn.textContent : null;
+      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Processing...'; }
+
+      const fd = new FormData(form);
+      const payload = {
+        drugId: fd.get('drugId'),
+        patientName: fd.get('patientName')
+      };
+
+      // small UI element to show result inline
+      function showInlineMessage(type, text) {
+        // type: 'success'|'error'|'info'
+        // insert message after form if not exists
+        let msg = form.nextElementSibling;
+        if (!msg || !msg.classList || !msg.classList.contains('transfer-msg')) {
+          msg = document.createElement('div');
+          msg.className = 'transfer-msg mt-2';
+          form.after(msg);
+        }
+        msg.className = `transfer-msg alert mt-2 ${type === 'success' ? 'alert-success' : (type === 'info' ? 'alert-info' : 'alert-danger')}`;
+        msg.innerHTML = text;
+      }
+
+      try {
+        const res = await fetch('/api/drugs/transfer-to-patient', {
+          method: 'POST',
+          credentials: 'same-origin', // important: sends session cookie
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          // Surface useful message from server
+          const msg = data.error || data.message || `Server error (${res.status})`;
+          showInlineMessage('error', `Dispense failed: ${msg}`);
+          throw new Error(msg);
+        }
+
+        // Success — show txHash and update table row
+        const txHash = data.txHash ? `<div class="small">TX: <code>${data.txHash}</code></div>` : '';
+        showInlineMessage('success', `Dispensed to patient successfully. ${txHash}`);
+
+        // Update row: change status cell and owner (best-effort DOM update)
+        const row = form.closest('tr');
+        if (row) {
+          // Status cell is the 5th td (1-based indexing); adjust if your markup differs
+          const statusCell = row.querySelector('td:nth-child(5)');
+          if (statusCell) {
+            statusCell.innerHTML = '<span class="badge bg-secondary">Dispensed</span>';
+          }
+          // Owner cell is the 4th td in your table (manufacturer is 4th in markup). If you want to update owner,
+          // find the owner cell and set it to the patient name.
+          // In your markup owner is 4th column? (You have #,ID,Name,Manufacturer,Status,LastUpdated,...)
+          // For safety, find the cell that contains the select (the form's parent cell) and update previous cells.
+          const ownerCell = row.querySelector('td:nth-child(4)');
+          if (ownerCell) {
+            ownerCell.textContent = payload.patientName;
+            // optional role line
+            const roleDiv = document.createElement('div');
+            roleDiv.className = 'text-muted small text-capitalize';
+            roleDiv.textContent = 'patient';
+            ownerCell.appendChild(roleDiv);
+          }
+        }
+
+      } catch (err) {
+        console.error('Dispense to patient error:', err);
+      } finally {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText || 'Dispense'; }
+      }
+    });
+  });
+});
+</script>
+
+
+
+<%- include('partials/footer') %>

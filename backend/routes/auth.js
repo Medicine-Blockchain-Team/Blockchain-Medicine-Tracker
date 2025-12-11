@@ -1,38 +1,32 @@
+// backend/routes/auth.js
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const router = express.Router();
 const User = require("../models/User");
-const { web3 } = require('../config/web3'); // Import web3 to get accounts
 
-
-// Register route
+// =====================
+// REGISTER
+// =====================
 router.post("/register", async (req, res) => {
-  const { username, email, password, role } = req.body;
+  const { username, email, password, role, walletAddress } = req.body;
 
   try {
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      // For frontend form rendered with EJS, you might want to render a view with message.
-      // But since your login returns JSON, let's keep consistent JSON here.
-      return res.status(400).json({ message: "User with this email already exists" });
+      return res.status(400).json({ message: "User already exists" });
     }
 
-    // Hash the password
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create new user
     const newUser = new User({
       username,
       email,
       passwordHash,
       role,
+      walletAddress: walletAddress || null, // ✅ store if MetaMask provided
     });
 
     await newUser.save();
-
-    // After success, you can redirect or respond with JSON
-    // Since your frontend is EJS views, let's redirect to login page
     return res.redirect("/login");
   } catch (err) {
     console.error("Registration error:", err);
@@ -40,9 +34,11 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Login route
+// =====================
+// LOGIN
+// =====================
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, walletAddress } = req.body;
 
   try {
     const user = await User.findOne({ email });
@@ -55,54 +51,39 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    // --- CHANGE: Add walletAddress to the session ---
-    // For this development setup, we'll assign the first Hardhat account
-    // to any user who logs in.
-    const accounts = await web3.eth.getAccounts();
-    const walletAddress = accounts[0]; // The default manufacturer/sender address
+    // ✅ DO NOT generate wallets in backend
+    // ✅ Accept walletAddress from frontend (MetaMask)
+    if (walletAddress) {
+      user.walletAddress = walletAddress;
+      await user.save();
+    }
 
     req.session.user = {
       id: user._id,
+      username: user.username,
       name: user.username,
       email: user.email,
       role: user.role,
-      walletAddress: walletAddress // Store the address in the session
+      walletAddress: user.walletAddress || null,
     };
-    // --- END CHANGE ---
 
-    return res.json({ message: "Login successful", user: req.session.user });
+    return res.json({
+      message: "Login successful",
+      user: req.session.user,
+    });
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
-// Optional admin check middleware (recommended)
-function isAdmin(req, res, next) {
-  if (req.session.user && req.session.user.role === "admin") {
-    next();
-  } else {
-    res.status(403).send("Access denied");
-  }
-}
 
-// Admin: Verify authenticity page
-router.get("/admin/verify", isAdmin, (req, res) => {
-  res.render("admin-verify");
-});
-
-// Admin: Flagged batches page
-router.get("/admin/flagged", isAdmin, (req, res) => {
-  res.render("admin-flagged");
-});
-
-// Admin: Audit logs page
-router.get("/admin/audit", isAdmin, (req, res) => {
-  res.render("admin-audit");
-});
-
-// Admin: Reports page
-router.get("/admin/reports", isAdmin, (req, res) => {
-  res.render("admin-reports");
+// =====================
+// LOGOUT
+// =====================
+router.post("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.json({ message: "Logged out" });
+  });
 });
 
 module.exports = router;

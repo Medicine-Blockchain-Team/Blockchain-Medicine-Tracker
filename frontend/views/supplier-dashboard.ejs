@@ -1,0 +1,134 @@
+<%- include('partials/header', { title: 'Supplier Dashboard', user, active: 'dashboard' }) %>
+
+<div class="row g-4">
+
+  <!-- LEFT: SUPPLIER SUMMARY -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h4 class="card-title mb-2">Supplier Dashboard</h4>
+        <p class="text-muted mb-3">
+          Medicines you have received from distributors/manufacturers and are
+          responsible for dispatching to hospitals.
+        </p>
+
+        <p class="small text-muted mb-0">
+          Select a hospital for a medicine and click
+          <strong>Transfer</strong> to move it further down the supply chain.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: MEDICINES IN SUPPLIER CUSTODY -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Medicines in Your Custody</h5>
+
+        <% if (!drugs || drugs.length === 0) { %>
+          <div class="alert alert-info mb-0">
+            No medicines are currently assigned to you.
+          </div>
+        <% } else { %>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Drug ID</th>
+                  <th>Name</th>
+                  <th>Manufacturer</th>
+                  <th>Status</th>
+                  <th>Transfer to Hospital</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% drugs.forEach((drug, index) => { %>
+                  <tr>
+                    <td><%= index + 1 %></td>
+
+                    <td><code><%= drug.id %></code></td>
+
+                    <td><%= drug.name %></td>
+
+                    <td><%= drug.manufacturer || 'N/A' %></td>
+
+                    <td>
+                      <span class="badge bg-warning text-dark">
+                        In Supplier Custody
+                      </span>
+                    </td>
+
+                    <!-- inside your supplier-dashboard.ejs table row where you show each drug -->
+<td>
+  <% if (hospitals && hospitals.length > 0) { %>
+    <div class="d-flex gap-2 align-items-center">
+      <select class="form-select form-select-sm hospital-select" data-drugid="<%= drug.id %>">
+        <% hospitals.forEach(h => { %>
+          <option value="<%= h.username || h.name %>"><%= h.username || h.name %></option>
+        <% }) %>
+      </select>
+      <button class="btn btn-sm btn-primary btn-transfer-to-hospital" data-drugid="<%= drug.id %>">
+        Transfer
+      </button>
+    </div>
+  <% } else { %>
+    <span class="text-muted small">No hospitals available</span>
+  <% } %>
+</td>
+
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+document.querySelectorAll('.btn-transfer-to-hospital').forEach(btn => {
+  btn.addEventListener('click', async (e) => {
+    const drugId = btn.getAttribute('data-drugid');
+    const select = document.querySelector('.hospital-select[data-drugid="'+drugId+'"]');
+    const hospitalName = select.value;
+
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/drugs/transfer-to-hospital', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drugId, hospitalName })
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Transfer failed');
+
+      // Success UI: show a short toast or update row status
+      btn.textContent = 'Transferred';
+      // Optionally update status cell and owner in DOM:
+      const row = btn.closest('tr');
+      const statusCell = row.querySelector('td:nth-child(6)'); // adjust index if table changed
+      if (statusCell) statusCell.innerHTML = '<span class="badge bg-success">Transferred to Hospital</span>';
+
+      // optionally show tx hash somewhere
+      console.log('Transfer tx:', json.txHash);
+
+    } catch (err) {
+      alert('Error: ' + (err.message || 'Server error'));
+      btn.textContent = 'Transfer';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+
+
+<%- include('partials/footer') %>

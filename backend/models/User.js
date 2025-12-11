@@ -9,10 +9,8 @@ const userSchema = new mongoose.Schema({
     enum: [
       'admin',              // CDSCO Admin
       'manufacturer', 
-      'supplier', 
-      'repackager', 
-      'distributor_primary', 
-      'distributor_secondary', 
+      'supplier',
+      'distributor',  
       'hospital', 
       'patient'
     ],

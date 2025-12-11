@@ -1,6 +1,6 @@
 
         body {
-        font-family: Arial, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background-color: #f3f6fb;
         color: #333;
         margin: 0;
@@ -137,3 +137,13 @@
         .verify-another-btn:hover {
     background-color: #003060;
     }
+    .card {
+  border-radius: 0.8rem;
+}
+.navbar-brand span.text-primary {
+  font-weight: 700;
+}
+
+table code {
+  font-size: 0.9rem;
+}

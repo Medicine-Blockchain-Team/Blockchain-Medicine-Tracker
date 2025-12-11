@@ -1,51 +1,155 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Patient Dashboard</title>
-  <link rel="stylesheet" href="/css/styles.css">
-</head>
-<body>
-  <nav>
-    <h1>Welcome, <%= user.name %> </h1>
-    <a href="/logout">Logout</a>
-  </nav>
+<%- include('partials/header', { title: 'Patient Dashboard', user, active: 'dashboard' }) %>
 
-  <main>
-    <% if (drug) { %>
-  <section class="verification-result">
-    <h2>Verification Result</h2>
-    <div class="drug-info">
-      <h3>✅ Drug Found</h3>
-      <p><strong>ID:</strong> <%= drug.id %></p>
-      <p><strong>Name:</strong> <%= drug.name %></p>
-      <p><strong>Status:</strong> <%= drug.status %></p>
-      <p><strong>Manufacturer:</strong> <%= drug.manufacturer %></p>
-    </div>
-    <a href="/verify-drug" class="verify-another-btn">Verify Another</a>
-  </section>
-<% } %>
-    <section class="verification">
-      <h2>Verify Drug Authenticity</h2>
-      <form action="/verify-drug" method="POST">
-        <label for="drugId">Enter Drug ID:</label>
-        <input type="text" name="drugId" id="drugId" required>
-        <button type="submit">Verify</button>
-      </form>
+<div class="row g-4">
 
-      <% if (message) { %>
-        <p class="message"><%= message %></p>
-      <% } %>
+  <!-- LEFT: WELCOME + INFO -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-2">Welcome, <%= user.username || user.name %> 👋</h5>
+        <p class="text-muted mb-3">
+          Use this dashboard to check whether your medicines are genuine and trace
+          their journey across the supply chain.
+        </p>
 
-      <% if (drug) { %>
-        <div class="drug-info">
-          <h3>✅ Drug Details</h3>
-          <p><strong>Name:</strong> <%= drug.name %></p>
-          <p><strong>Status:</strong> <%= drug.status %></p>
-          <p><strong>Manufacturer:</strong> <%= drug.manufacturer %></p>
+        <a href="/logout" class="btn btn-outline-danger w-100 mb-2">
+          Logout
+        </a>
+
+        <div class="mt-3">
+          <h6 class="mb-2">Safety Tips</h6>
+          <ul class="small text-muted mb-0">
+            <li>Always verify the Drug ID before taking the medicine.</li>
+            <li>Check that the manufacturer name matches the package.</li>
+            <li>If verification fails, contact your doctor or pharmacist.</li>
+          </ul>
         </div>
-      <% } %>
-    </section>
-  </main>
-</body>
-</html>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: VERIFY + RESULT -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Verify Medicine Authenticity</h5>
+
+        <form id="patientVerifyForm" class="row g-2 align-items-center">
+          <div class="col-md-8">
+            <label for="patientDrugId" class="form-label small mb-1">
+              Enter Drug ID (from QR/barcode or label)
+            </label>
+            <input
+              type="text"
+              id="patientDrugId"
+              class="form-control"
+              placeholder="e.g. DRUG-0001"
+              required
+            />
+          </div>
+          <div class="col-md-4 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary w-100">
+              Verify Drug
+            </button>
+          </div>
+        </form>
+
+        <div id="patientVerifyBox" class="mt-3 d-none">
+          <div id="patientVerifyAlert" class="alert mb-2"></div>
+
+          <div id="patientVerifyDetails" class="row g-3 d-none">
+            <div class="col-md-6">
+              <div class="border rounded p-3 bg-light">
+                <h6 class="mb-2">Drug Info</h6>
+                <p class="mb-1"><strong>Drug ID:</strong> <span id="p-id"></span></p>
+                <p class="mb-1"><strong>Name:</strong> <span id="p-name"></span></p>
+                <p class="mb-1"><strong>Manufacturer:</strong> <span id="p-manufacturer"></span></p>
+                <p class="mb-0"><strong>Status:</strong> <span id="p-status"></span></p>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <div class="border rounded p-3">
+                <h6 class="mb-2">Current Holder</h6>
+                <p class="mb-1"><strong>Holder:</strong> <span id="p-holder"></span></p>
+                <p class="mb-1"><strong>Role:</strong> <span id="p-holderRole"></span></p>
+                <p class="mb-0">
+                  <strong>Last Updated:</strong> <span id="p-updatedAt"></span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Optional: small note card -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-body small text-muted">
+        <strong>Note:</strong> This verification uses blockchain-backed data from the
+        medicine supply chain (manufacturer → supplier → hospital → patient).
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// PATIENT VERIFY FLOW (no redirect)
+const pvForm       = document.getElementById('patientVerifyForm');
+const pvInput      = document.getElementById('patientDrugId');
+const pvBox        = document.getElementById('patientVerifyBox');
+const pvAlert      = document.getElementById('patientVerifyAlert');
+const pvDetailsBox = document.getElementById('patientVerifyDetails');
+
+if (pvForm) {
+  pvForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const drugId = pvInput.value.trim();
+    if (!drugId) return;
+
+    // show loading state
+    pvBox.classList.remove('d-none');
+    pvDetailsBox.classList.add('d-none');
+    pvAlert.className = 'alert alert-info';
+    pvAlert.innerText = 'Verifying drug...';
+
+    try {
+      const res = await fetch(`/api/drugs/${encodeURIComponent(drugId)}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Drug not found');
+      }
+
+      // success
+      pvAlert.className = 'alert alert-success';
+      pvAlert.innerText = '✅ Drug found and verified';
+
+      // fill in details
+      document.getElementById('p-id').innerText           = data.id || drugId;
+      document.getElementById('p-name').innerText         = data.name || 'N/A';
+      document.getElementById('p-manufacturer').innerText = data.manufacturer || 'N/A';
+      document.getElementById('p-status').innerText       = data.status || 'Unknown';
+
+      document.getElementById('p-holder').innerText       = data.currentHolder || data.currentOwner || 'N/A';
+      document.getElementById('p-holderRole').innerText   = data.currentHolderRole || data.currentOwnerRole || 'N/A';
+
+      const updated = data.updatedAt
+        ? new Date(data.updatedAt).toLocaleString()
+        : 'N/A';
+      document.getElementById('p-updatedAt').innerText = updated;
+
+      pvDetailsBox.classList.remove('d-none');
+    } catch (err) {
+      console.error(err);
+      pvAlert.className = 'alert alert-danger';
+      pvAlert.innerText = '❌ ' + (err.message || 'Server error while verifying drug');
+      pvDetailsBox.classList.add('d-none');
+    }
+  });
+}
+</script>
+
+<%- include('partials/footer') %>

@@ -1,24 +1,150 @@
-<!-- views/admin-verify.ejs -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <%- include('partials/head') %>
   <title>Verify Drug Batch</title>
+  <style>
+    .card-verify { max-width: 920px; margin: 28px auto; }
+    .result-pre { max-height: 360px; overflow: auto; white-space: pre-wrap; word-wrap: break-word; background: #f8f9fa; padding: .75rem; border-radius: .375rem; border: 1px solid #e9ecef; font-family: Menlo, Monaco, monospace; font-size: .9rem; }
+    .muted-small { font-size: .9rem; color: #6c757d; }
+  </style>
 </head>
 <body>
   <%- include('partials/navbar', { user: user, hideAuthLinks: true }) %>
-  <div class="container mt-4">
-    <h2>Verify Drug Batch ID Authenticity</h2>
-    <form method="POST" action="/admin/verify">
-      <div class="mb-3">
-        <label for="batchId" class="form-label">Batch ID</label>
-        <input type="text" class="form-control" name="batchId" id="batchId" required />
+
+  <div class="card card-verify shadow-sm">
+    <div class="card-body">
+      <div class="d-flex align-items-start justify-content-between mb-3">
+        <div>
+          <h4 class="mb-1">Verify Drug Batch</h4>
+          <div class="muted-small">Check on-chain authenticity for a batch / drug ID. Enter the Batch ID below and click <strong>Verify</strong>.</div>
+        </div>
+        <div class="text-end">
+          <a href="/admin" class="btn btn-outline-secondary btn-sm">← Admin Home</a>
+        </div>
       </div>
-      <button type="submit" class="btn btn-primary">Verify</button>
-    </form>
-    <% if (result) { %>
-      <div class="alert alert-info mt-3"><%= result %></div>
-    <% } %>
+
+      <form id="verifyForm" class="row g-2 align-items-center" onsubmit="return false;">
+        <div class="col-md-8">
+          <input id="batchId" name="batchId" type="text" class="form-control form-control-lg" placeholder="Enter Batch / Drug ID (e.g. 1005 or DRUG-0001)" required autocomplete="off" />
+        </div>
+
+        <div class="col-auto">
+          <button id="verifyBtn" type="button" class="btn btn-primary btn-lg">Verify</button>
+        </div>
+
+        <div class="col-12 mt-2">
+          <div id="formNote" class="muted-small">
+            Tip: This performs a read from the blockchain and may take a few seconds.
+            <span id="spinner" class="spinner-border spinner-border-sm text-primary d-none" role="status" aria-hidden="true"></span>
+          </div>
+        </div>
+      </form>
+
+      <div id="resultArea" class="mt-4 d-none">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <h6 class="mb-0">Verification Result</h6>
+            <div class="muted-small">Structured on-chain data or server error.</div>
+          </div>
+          <div>
+            <button id="copyBtn" class="btn btn-outline-secondary btn-sm">Copy JSON</button>
+          </div>
+        </div>
+
+        <div id="resultAlert" class="mb-2"></div>
+
+        <pre id="resultBody" class="result-pre"></pre>
+      </div>
+
+    </div>
   </div>
+
+  <%- include('partials/footer') %>
+
+  <script>
+    (function () {
+      const verifyBtn = document.getElementById('verifyBtn');
+      const batchInput = document.getElementById('batchId');
+      const spinner = document.getElementById('spinner');
+      const resultArea = document.getElementById('resultArea');
+      const resultAlert = document.getElementById('resultAlert');
+      const resultBody = document.getElementById('resultBody');
+      const copyBtn = document.getElementById('copyBtn');
+
+      function showResult(obj) {
+        resultArea.classList.remove('d-none');
+        resultAlert.innerHTML = '';
+        resultBody.textContent = JSON.stringify(obj, null, 2);
+      }
+
+      verifyBtn.addEventListener('click', async () => {
+        const id = (batchInput.value || '').trim();
+        if (!id) { batchInput.focus(); return; }
+
+        verifyBtn.disabled = true;
+        spinner.classList.remove('d-none');
+        resultArea.classList.add('d-none');
+        resultAlert.innerHTML = '';
+        resultBody.textContent = '';
+
+        try {
+          const res = await fetch('/api/admin/verify', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ batchId: id })
+          });
+
+          const json = await res.json();
+          if (!res.ok) {
+            // display structured error if present
+            resultArea.classList.remove('d-none');
+            const errMsg = json?.error || json?.message || `Server error ${res.status}`;
+            resultAlert.innerHTML = `<div class="alert alert-danger mb-0">${errMsg}</div>`;
+            // helpful debug fields
+            if (json?.availableMethods) {
+              const sample = json.availableMethods.slice(0, 12).join(', ');
+              resultBody.textContent = `Available contract methods (sample):\n${sample}`;
+            } else if (json?.debug) {
+              resultBody.textContent = `Debug:\n${JSON.stringify(json.debug, null, 2)}`;
+            } else {
+              resultBody.textContent = JSON.stringify(json, null, 2);
+            }
+            return;
+          }
+
+          // Success: json.ok true
+          if (json.ok) {
+            resultAlert.innerHTML = `<div class="alert alert-success mb-0">On-chain record (method: ${json.method})</div>`;
+            showResult(json.data);
+          } else {
+            resultArea.classList.remove('d-none');
+            resultAlert.innerHTML = `<div class="alert alert-warning mb-0">${json.error || 'Unknown response'}</div>`;
+            resultBody.textContent = JSON.stringify(json, null, 2);
+          }
+        } catch (err) {
+          resultArea.classList.remove('d-none');
+          resultAlert.innerHTML = `<div class="alert alert-danger mb-0">Network error: ${err.message}</div>`;
+          resultBody.textContent = String(err);
+          console.error('verify error', err);
+        } finally {
+          verifyBtn.disabled = false;
+          spinner.classList.add('d-none');
+        }
+      });
+
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(resultBody.textContent);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => (copyBtn.textContent = 'Copy JSON'), 1400);
+        } catch (e) {
+          copyBtn.textContent = 'Fail';
+          setTimeout(() => (copyBtn.textContent = 'Copy JSON'), 1400);
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

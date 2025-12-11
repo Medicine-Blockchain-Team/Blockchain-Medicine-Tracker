@@ -1,62 +1,337 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <%- include('partials/head') %>
-  <title>Manufacturer Dashboard</title>
-</head>
-<body>
-  <%- include('partials/navbar', { user: user, hideAuthLinks: false }) %>
+<%- include('partials/header', { title: 'Manufacturer Dashboard', user, active: 'dashboard' }) %>
 
-  <div class="container mt-4">
-    <h2>Manufacturer Dashboard</h2>
+<!-- RESULT CARD FOR TRANSFER -->
+<div id="transferResult" class="card shadow-sm border-0 mb-3 d-none">
+  <div class="card-body">
+    <h5 class="card-title mb-2 text-success">✅ Transfer Result</h5>
+    <p id="transferMessage" class="mb-2"></p>
 
-    <%# 
-      This block will display any message passed from the backend.
-      This is where the "Transaction submitted successfully!..." message will appear.
-    %>
-    <% if (message) { %>
-      <div class="alert alert-info"><%= message %></div>
-    <% } %>
+    <div id="txSection" class="small text-muted d-none">
+      <div class="fw-semibold mb-1">Blockchain Transaction Hash</div>
+      <code id="txHash" class="d-block mb-2"></code>
 
-    <hr>
-
-    <h4>Add New Drug</h4>
-    <%# 
-      This form posts to the /manufacturer/add-drug route.
-      The labels and inputs are now correctly linked using 'for' and 'id'.
-    %>
-    <form method="POST" action="/manufacturer/add-drug" class="mt-3 mb-5">
-      <div class="form-group mb-3">
-        <label for="drugId">Drug ID:</label>
-        <input type="text" class="form-control" name="id" id="drugId" required>
-      </div>
-      <div class="form-group mb-3">
-        <label for="drugName">Drug Name:</label>
-        <input type="text" class="form-control" name="name" id="drugName" required>
-      </div>
-      <button type="submit" class="btn btn-primary mt-2">Add Drug to Blockchain</button>
-    </form>
-
-    <hr>
-
-    <h4>Your Drugs</h4>
-    <%# 
-      This list displays all drugs associated with the manufacturer that are
-      currently present in the MongoDB database. It will update on page refresh.
-    %>
-    <ul class="list-group">
-      <% if (drugs && drugs.length > 0) { %>
-        <% drugs.forEach(drug => { %>
-          <li class="list-group-item">
-            <strong>ID:</strong> <%= drug.id %> | 
-            <strong>Name:</strong> <%= drug.name %> | 
-            <strong>Status:</strong> <%= drug.status %>
-          </li>
-        <% }) %>
-      <% } else { %>
-        <li class="list-group-item">No drugs found. Add one using the form above.</li>
-      <% } %>
-    </ul>
+      <div class="fw-semibold mb-1">Raw Response</div>
+      <pre id="prettyJson" class="bg-light p-2 rounded small mb-0"></pre>
+    </div>
   </div>
-</body>
-</html>
+</div>
+
+<div class="row g-4">
+
+  <!-- LEFT: ADD NEW DRUG -->
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body">
+        <h5 class="card-title mb-2">Add New Drug</h5>
+        <p class="text-muted small mb-3">
+          Register a new medicine on the blockchain. Use a unique Drug ID.
+        </p>
+
+        <div id="addDrugAlert" class="alert d-none" role="alert"></div>
+
+        <form id="addDrugForm" autocomplete="off">
+          <div class="mb-2">
+            <label class="form-label">Drug ID</label>
+            <input
+              type="text"
+              name="id"
+              class="form-control"
+              placeholder="e.g. DRUG-0001"
+              required
+            />
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label">Drug Name</label>
+            <input
+              type="text"
+              name="name"
+              class="form-control"
+              placeholder="e.g. Paracetamol 500mg"
+              required
+            />
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 mt-2">
+            Add Drug
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: MANUFACTURED DRUGS + ASSIGN TO DISTRIBUTOR -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h5 class="card-title mb-1">Your Manufactured Medicines</h5>
+            <p class="text-muted small mb-0">
+              These drugs are registered on the blockchain under your manufacturer account.
+              Use the action on the right to assign a drug to a distributor.
+            </p>
+          </div>
+        </div>
+
+        <% if (!drugs || drugs.length === 0) { %>
+          <p class="text-muted mb-0">
+            You haven't added any medicines yet. Use the form on the left to register a new drug.
+          </p>
+        <% } else { %>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Drug ID</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Current Owner</th>
+                  <th>Assign to Distributor</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% drugs.forEach((drug, index) => { %>
+                  <tr>
+                    <td><%= index + 1 %></td>
+
+                    <td><code><%= drug.id %></code></td>
+
+                    <td><%= drug.name %></td>
+
+                    <td>
+                      <span class="badge bg-success text-uppercase">
+                        <%= drug.status || 'Manufactured' %>
+                      </span>
+                    </td>
+
+                    <td>
+                      <%= drug.currentOwner || user.username || user.name %>
+                      <div class="text-muted small text-capitalize">
+                        <%= drug.currentOwnerRole || 'manufacturer' %>
+                      </div>
+                    </td>
+
+                    <td>
+                      <% if (distributors && distributors.length > 0) { %>
+                        <form
+                          action="/api/drugs/transfer-to-distributor"
+                          method="POST"
+                          class="d-flex gap-2 transfer-to-distributor-form"
+                        >
+                          <input type="hidden" name="drugId" value="<%= drug.id %>" />
+
+                          <select
+                            name="distributorName"
+                            class="form-select form-select-sm"
+                            required
+                          >
+                            <% distributors.forEach(d => { %>
+                              <option value="<%= d.username || d.name %>"><%= d.username || d.name %></option>
+                            <% }) %>
+                          </select>
+
+                          <button type="submit" class="btn btn-sm btn-outline-primary">
+                            Assign
+                          </button>
+                        </form>
+                      <% } else { %>
+                        <span class="text-muted small">
+                          No distributors registered yet
+                        </span>
+                      <% } %>
+                    </td>
+
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- INLINE SCRIPT: Add Drug (AJAX) -->
+<script>
+  (function() {
+    const addForm = document.getElementById('addDrugForm');
+    const alertBox = document.getElementById('addDrugAlert');
+
+    if (!addForm) return;
+
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      alertBox.classList.add('d-none');
+
+      const formData = new FormData(addForm);
+      const payload = {
+        id: formData.get('id')?.trim(),
+        name: formData.get('name')?.trim()
+      };
+
+      if (!payload.id || !payload.name) {
+        alertBox.className = 'alert alert-warning';
+        alertBox.textContent = 'Please provide both Drug ID and Name.';
+        alertBox.classList.remove('d-none');
+        return;
+      }
+
+      const submitBtn = addForm.querySelector("button[type='submit']");
+      const origText = submitBtn ? submitBtn.textContent : null;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Adding...';
+      }
+
+      try {
+        const res = await fetch('/api/drugs/add', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const message = data.error || data.message || `Server error (${res.status})`;
+          throw new Error(message);
+        }
+
+        alertBox.className = 'alert alert-success';
+        alertBox.textContent = data.message || 'Drug added successfully!';
+        alertBox.classList.remove('d-none');
+
+        addForm.reset();
+
+        setTimeout(() => window.location.reload(), 800);
+      } catch (err) {
+        alertBox.className = 'alert alert-danger';
+        alertBox.textContent = err.message || 'Error adding drug';
+        alertBox.classList.remove('d-none');
+        console.error('Add drug error:', err);
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = origText || 'Add Drug';
+        }
+      }
+    });
+  })();
+</script>
+
+<!-- SCRIPT: Intercept Assign-to-Distributor forms, show result card -->
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const forms = document.querySelectorAll(".transfer-to-distributor-form");
+    const resultCard = document.getElementById("transferResult");
+    const msgEl = document.getElementById("transferMessage");
+    const txSection = document.getElementById("txSection");
+    const txHashEl = document.getElementById("txHash");
+    const prettyJsonEl = document.getElementById("prettyJson");
+
+    function resetResultCard() {
+      resultCard.classList.add('d-none');
+      resultCard.classList.remove('border', 'border-success', 'border-danger');
+      msgEl.textContent = '';
+      txSection.classList.add('d-none');
+      txHashEl.textContent = '';
+      prettyJsonEl.textContent = '';
+    }
+
+    function showResultCard(type, message, data = null) {
+      // ensure card visible and bordered
+      resultCard.classList.remove('d-none');
+      resultCard.classList.add('border');
+
+      if (type === 'success') {
+        resultCard.classList.remove('border-danger');
+        resultCard.classList.add('border-success');
+        msgEl.textContent = message || 'Transfer successful';
+      } else {
+        resultCard.classList.remove('border-success');
+        resultCard.classList.add('border-danger');
+        msgEl.textContent = message || 'Error transferring drug';
+      }
+
+      if (data && data.txHash) {
+        txSection.classList.remove('d-none');
+        txHashEl.textContent = data.txHash;
+        prettyJsonEl.textContent = JSON.stringify(data, null, 2);
+      } else {
+        txSection.classList.add('d-none');
+        txHashEl.textContent = '';
+        prettyJsonEl.textContent = '';
+      }
+    }
+
+    forms.forEach((form) => {
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        // reset previous result
+        resetResultCard();
+
+        const submitBtn = form.querySelector("button[type='submit']");
+        const origText = submitBtn ? submitBtn.textContent : null;
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Transferring...";
+        }
+
+        try {
+          const formData = new FormData(form);
+          const payload = {
+            drugId: formData.get("drugId"),
+            distributorName: formData.get("distributorName"),
+          };
+
+          if (!payload.drugId || !payload.distributorName) {
+            throw new Error('Missing drugId or distributorName');
+          }
+
+          const res = await fetch(form.action, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "application/json"
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const message = data.error || data.message || `Server error (${res.status})`;
+            throw new Error(message);
+          }
+
+          showResultCard('success', data.message || 'Drug transferred successfully', data);
+
+          // brief delay to let user view result before reload
+          setTimeout(() => window.location.reload(), 1500);
+        } catch (err) {
+          console.error('Transfer-to-distributor error:', err);
+          showResultCard('error', err.message || 'Error transferring drug');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = origText || "Assign";
+          }
+        }
+      });
+    });
+  });
+</script>
+
+<%- include('partials/footer') %>

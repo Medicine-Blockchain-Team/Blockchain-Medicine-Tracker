@@ -1,19 +1,50 @@
-<!-- views/admin-reports.ejs -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <%- include('partials/head') %>
-  <title>Reports</title>
-</head>
-<body>
-  <%- include('partials/navbar', { user: user, hideAuthLinks: true }) %>
-  <div class="container mt-4">
-    <h2>Analytics & Reports</h2>
-    <ul>
-      <li>Total Drugs: <%= stats.totalDrugs %></li>
-      <li>Total Transfers: <%= stats.totalTransfers %></li>
-      <li>Flagged Batches: <%= stats.flaggedBatches %></li>
-    </ul>
+<div class="container mt-4">
+  <h2>Analytics & Reports</h2>
+
+  <% if (error) { %>
+    <div class="alert alert-danger"><%= error %></div>
+  <% } %>
+
+  <% const s = stats || { totalDrugs: 0, totalTransfers: 0, flaggedBatches: 0 } %>
+
+  <div class="row g-3">
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="h5">Total Drugs</div>
+        <div class="display-6 fw-bold"><%= s.totalDrugs %></div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="h5">Total Transfers</div>
+        <div class="display-6 fw-bold"><%= s.totalTransfers %></div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card p-3">
+        <div class="h5">Flagged Batches</div>
+        <div class="display-6 fw-bold text-danger"><%= s.flaggedBatches %></div>
+      </div>
+    </div>
   </div>
-</body>
-</html>
+
+  <% if (recentTransfers && recentTransfers.length > 0) { %>
+    <h4 class="mt-4">Recent Transfers</h4>
+    <table class="table table-sm">
+      <thead>
+        <tr><th>When</th><th>User</th><th>Action</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        <% recentTransfers.forEach(r => { %>
+          <tr>
+            <td><%= new Date(r.timestamp).toLocaleString() %></td>
+            <td><%= r.userName %></td>
+            <td><%= r.action %></td>
+            <td><%= r.details %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+
+</div>
